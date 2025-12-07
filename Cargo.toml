@@ -1,0 +1,16 @@
+[package]
+name = "dimg"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+clap = { version = "4.5.53", features = ["derive"] }
+indicatif = "0.18.3"
+libc = "0.2.178"
+log = "0.4.29"
+num_cpus = "1.17.0"
+parse-size = "1.1.0"
+simplelog = "0.12.2"
+tokio-uring = "0.5.0"
+xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
