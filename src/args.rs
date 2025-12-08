@@ -10,17 +10,17 @@ use simplelog::*;
 
 const DEFAULT_BLOCK_SIZE: usize = 32768;
 
-/// Hide a file into a PNG one.
+/// Device imaging tool.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, color = clap::ColorChoice::Always)]
 pub struct Args {
     /// device tio image
     #[arg(short, long, required = true, value_name = "DEVICE")]
-    pub dev: PathBuf,
+    pub r#if: PathBuf,
 
     /// output file
     #[arg(short, long, required = true, value_name = "OUTPUT")]
-    pub output: PathBuf,
+    pub of: PathBuf,
 
     /// block size
     #[arg(long, value_name = "BLOCK_SIZE")]
@@ -38,24 +38,14 @@ pub struct Args {
     #[arg(long)]
     pub log: Option<PathBuf>,
 
-    // /// Postgresql database URL. if not specified, takes the value from the IAA_DB enviroment variable
-    // #[arg(long)]
-    // pub db: String,
+    /// LZ4 compression
+    #[arg(long)]
+    pub compress: bool,
 
-    // /// if set, delete all rows from the table before inserting
-    // #[arg(long)]
-    // pub overwrite: bool,
-
-    // /// if set, calculate BLAKE3 hashes
-    // #[arg(long)]
-    // pub blake3: bool,
     /// if set, output is similar to dd
     #[arg(long)]
     pub dd: bool,
 
-    // /// if set, calculate Shannon entropy
-    // #[arg(long)]
-    // pub entropy: bool,
     /// Verbose mode (-v, -vv, -vvv)
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
