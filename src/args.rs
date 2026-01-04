@@ -14,7 +14,7 @@ const DEFAULT_BLOCK_SIZE: usize = 32768;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, color = clap::ColorChoice::Always)]
 pub struct Args {
-    /// device tio image
+    /// device to image
     #[arg(short, long, required = true, value_name = "DEVICE")]
     pub r#if: PathBuf,
 
@@ -24,11 +24,11 @@ pub struct Args {
 
     /// block size
     #[arg(long, value_name = "BLOCK_SIZE")]
-    pub bs: Option<String>,
+    bs: Option<String>,
 
     /// number of thread to use
     #[arg(long, short)]
-    pub threads: Option<usize>,
+    nb_threads: Option<usize>,
 
     /// stops after reading N blocks
     #[arg(long, short, value_name = "NB_BLOCKS")]
@@ -62,14 +62,23 @@ impl Args {
             DEFAULT_BLOCK_SIZE
         }
     }
+
+    pub fn nb_threads(&self) -> usize {
+        // defaults to number of threads on CPU
+        if let Some(n) = self.nb_threads {
+            n
+        } else {
+            num_cpus::get()
+        }
+    }
 }
 
 pub fn get_args() -> anyhow::Result<Args> {
     let mut args = Args::parse();
 
     // by default, use number of cores for threads
-    if args.threads.is_none() {
-        args.threads = Some(num_cpus::get());
+    if args.nb_threads.is_none() {
+        args.nb_threads = Some(num_cpus::get());
     }
 
     // extract loglevel from verbose flag
