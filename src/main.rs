@@ -6,7 +6,7 @@ use std::{collections::HashMap, os::unix::fs::OpenOptionsExt};
 
 use crate::buffer::{Buffer, is_zero};
 use crate::reader::{Context, read_par};
-use crate::writer::writer_thread;
+use crate::writer::{WriterParams, writer_thread};
 use crate::{args::get_args, chunk::Chunk};
 
 mod device;
@@ -49,7 +49,8 @@ fn main() -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel::<(usize, Vec<u8>)>();
 
     // start our writer/hasher thread
-    let hasher_handle = writer_thread(rx);
+    let writer_params = WriterParams::from(&args);
+    let hasher_handle = writer_thread(rx, writer_params);
 
     // start args.threads number of threads
     /*
@@ -100,7 +101,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Drop the original sender so that writer/hasher thread can exit
-    drop(tx);    
+    drop(tx);
 
     for handle in handles {
         handle.join().unwrap();

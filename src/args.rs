@@ -49,6 +49,10 @@ pub struct Args {
     /// Verbose mode (-v, -vv, -vvv)
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Calculate the sha256 sum of the input file or device block
+    #[arg(long)]
+    pub sha256: bool,
 }
 
 impl Args {
