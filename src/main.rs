@@ -1,37 +1,37 @@
 mod args;
+use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Instant;
-use std::{collections::HashMap, os::unix::fs::OpenOptionsExt};
 
-use crate::buffer::{Buffer, is_zero};
-use crate::reader::{Context, read_par};
+use crate::args::get_args;
+use crate::reader::{RunContext, read_par};
 use crate::writer::{WriterParams, writer_thread};
-use crate::{args::get_args, chunk::Chunk};
 
 mod device;
 use anyhow::Ok;
-use device::input_size;
+use device::Device;
 
-mod buffer;
 mod chunk;
 mod hash;
 mod reader;
 mod writer;
 
+use human_bytes::human_bytes;
+use humantime::format_duration;
 use indicatif::ProgressBar;
-use log::{info, trace};
-use tokio_uring::fs::{File, OpenOptions};
+use log::{debug, info, trace};
 
 fn main() -> anyhow::Result<()> {
-    let now = Instant::now();
+    let start = Instant::now();
 
     // get arguments
     let args = get_args()?;
-    info!("args: {:?}", args);
+    debug!("args: {:?}", args);
 
     // get device size
-    let devsize = input_size(&args.r#if)?;
+    let devsize = Device::size(&args.r#if)?;
     let pbar = Arc::new(ProgressBar::new(devsize));
 
     // if this option is set, try to deduplicate only
@@ -46,138 +46,80 @@ fn main() -> anyhow::Result<()> {
     let mut handles = Vec::new();
 
     // this is for our writer/hasher thread
-    let (tx, rx) = mpsc::channel::<(usize, Vec<u8>)>();
+    let (tx, rx) = mpsc::channel::<(u64, Vec<u8>)>();
 
     // start our writer/hasher thread
     let writer_params = WriterParams::from(&args);
     let hasher_handle = writer_thread(rx, writer_params);
 
+    info!(
+        "input:{} pid:{} threads:{} block_size:{} buffers:{} target_size:{devsize}",
+        args.r#if.display(),
+        std::process::id(),
+        args.nb_threads(),
+        args.block_size(),
+        args.buffers,
+    );
+
+    // new to synchronize access to offset for multi-threaded access
+    let shared_offset = Arc::new(AtomicU64::new(0));
+    let block_index = Arc::new(AtomicU64::new(0));
+
     // start args.threads number of threads
-    /*
-
-                    FILE (blocks on disk)
-    +--------------------------------------------------+
-    |  B0  |  B1  |  B2  |  B3  |  B4  |  B5  |  B6  |  B7 |
-    +--------------------------------------------------+
-        ^      ^      ^      ^
-        |      |      |      |
-
-    Thread 0        Thread 1        Thread 2        Thread 3
-    ---------       ---------       ---------       ---------
-    io_uring 0     io_uring 1     io_uring 2     io_uring 3
-        |               |               |               |
-        | read_at       | read_at       | read_at       | read_at
-        | offset=0      | offset=1*K    | offset=2*K    | offset=3*K
-        v               v               v               v
-       B0              B1              B2              B3
-
-    General rule:
-      Thread i reads block k:
-
-        offset = k * BLOCK_SIZE
-
-    */
     for i in 0..args.nb_threads() {
         let tx = tx.clone();
 
         // build context
-        let ctx = Context {
+        let ctx = RunContext {
             nb_threads: args.nb_threads(),
             thread_id: i,
             block_size: args.block_size(),
             pbar: Arc::clone(&pbar),
             tx: tx,
+            num_buffers: args.buffers,
+            shared_offset: Arc::clone(&shared_offset),
+            block_index: Arc::clone(&block_index),
             pattern_func: |n, i, k| n * k + i,
         };
-        println!("{:?}", ctx);
+        trace!("{:?}", ctx);
 
         let path = args.r#if.clone();
 
-        info!("starting thread {i}");
-
-        handles.push(thread::spawn(move || {
-            read_par(ctx, path).unwrap();
-        }));
+        debug!("starting thread {i}");
+        let thread_id = thread::spawn(move || read_par(ctx, path));
+        handles.push(thread_id);
     }
 
     // Drop the original sender so that writer/hasher thread can exit
     drop(tx);
 
     for handle in handles {
-        handle.join().unwrap();
+        let _ = handle
+            .join()
+            .map_err(|e| anyhow::anyhow!("thread panicked: {:?}", e))?;
     }
 
-    // tokio_uring::start(async {
-    //     // Open a file
-    //     let src: File = File::open(&args.r#if).await?;
-    //     let dst = File::create(&args.of).await?;
+    // print out hash if any
+    let hash = hasher_handle
+        .join()
+        .map_err(|e| anyhow::anyhow!("thread panicked: {:?}", e))?;
 
-    //     let devsize = get_dev_size(&src)?;
-    //     let bar = ProgressBar::new(devsize);
-
-    //     // Buffers
-    //     let mut read_offset = 0u64;
-    //     let mut write_offset = 0u64;
-
-    //     loop {
-    //         //let buf = Vec::with_capacity(args.block_size());
-    //         let buf = Buffer::with_capacity(args.block_size());
-
-    //         // Asynchronously read a chunk
-    //         let (res, buf) = src.read_at(Into::<Vec<u8>>::into(buf), read_offset).await;
-    //         let n = res?;
-
-    //         // EOF ?
-    //         if n == 0 {
-    //             break;
-    //         }
-
-    //         // create the chunk metadata with bytes we just read
-    //         let bytes = &buf[..n];
-    //         let chunk = Chunk::try_from((bytes, args.dd, args.compress))?;
-    //         trace!("chunk: {:?}", chunk);
-
-    //         // Optional: compute SHA256 hash of this chunk
-    //         // let mut hasher = Sha256::new();
-    //         // hasher.update(chunk);
-    //         // let hash = hasher.finalize();
-    //         // println!("Chunk at offset {} hash: {}", offset, hex::encode(hash));
-
-    //         // asynchronously write chunk to destination
-
-    //         let res = chunk.write_at(&dst, &mut write_offset, args.dd).await;
-    //         res?;
-
-    //         read_offset += n as u64;
-    //         bar.inc(n as u64);
-
-    //         trace!("read offset: {read_offset} write offset: {write_offset}")
-    //     }
-
-    //     bar.finish();
-
-    //     src.close().await?;
-    //     dst.close().await?;
-
-    //     //───────────────────────────────────────────────────────────────────────────────────
-    //     // elapsed time
-    //     //───────────────────────────────────────────────────────────────────────────────────
-    //     let elapsed = now.elapsed();
-    //     println!("took {} millis", elapsed.as_millis());
-
-    //     println!("keys={}", dedup.len());
-
-    //     Ok(())
-    // })?;
-
-    hasher_handle.join().unwrap();
+    if let Some(hash) = hash {
+        println!("{hash}");
+    }
 
     //───────────────────────────────────────────────────────────────────────────────────
     // elapsed time
     //───────────────────────────────────────────────────────────────────────────────────
     pbar.finish();
-    let elapsed = now.elapsed();
-    println!("took {} millis", elapsed.as_millis());
+    
+    let elapsed = start.elapsed();
+    let rate = devsize as f64 / elapsed.as_secs_f64();
+    info!(
+        "took: {} millis, rate: {}/s",
+        format_duration(elapsed),
+        human_bytes(rate)
+    );
 
     Ok(())
 }

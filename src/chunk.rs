@@ -1,8 +1,11 @@
-use std::{borrow::Cow, fs::File, io::{BufWriter, Write}};
+use std::{
+    borrow::Cow,
+    fs::File,
+    io::{BufWriter, Write},
+};
 
-use anyhow::anyhow;
 use lz4::block::compress;
-use xxhash_rust::xxh3::xxh3_128;
+// use xxhash_rust::xxh3::xxh3_128;
 
 use crate::writer::WriterParams;
 

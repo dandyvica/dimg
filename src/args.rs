@@ -2,7 +2,6 @@ use std::fs::OpenOptions;
 use std::path::PathBuf;
 
 //use clap::builder::styling;
-use anyhow::anyhow;
 use clap::Parser;
 use clap::builder::styling;
 use parse_size::Config;
@@ -19,8 +18,8 @@ pub struct Args {
     pub r#if: PathBuf,
 
     /// output file
-    #[arg(short, long, required = true, value_name = "OUTPUT")]
-    pub of: PathBuf,
+    #[arg(short, long, value_name = "OUTPUT")]
+    pub of: Option<PathBuf>,
 
     /// block size
     #[arg(long, value_name = "BLOCK_SIZE")]
@@ -30,9 +29,9 @@ pub struct Args {
     #[arg(long, short)]
     nb_threads: Option<usize>,
 
-    /// stops after reading N blocks
+    /// stops after reading count blocks
     #[arg(long, short, value_name = "NB_BLOCKS")]
-    pub nblocks: Option<u64>,
+    pub count: Option<u64>,
 
     /// log file
     #[arg(long)]
@@ -53,6 +52,14 @@ pub struct Args {
     /// Calculate the sha256 sum of the input file or device block
     #[arg(long)]
     pub sha256: bool,
+
+    /// Calculate the Blake3 sum of the input file or device block
+    #[arg(long)]
+    pub blake3: bool,
+
+    /// the number of 4096-aligned buffers used in the registry to communicate to the kernel
+    #[arg(long, default_value = "8", value_name = "NB_BUFFERS")]
+    pub buffers: usize,
 }
 
 impl Args {
